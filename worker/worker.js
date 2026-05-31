@@ -104,7 +104,8 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
     <!-- 添加/编辑卡片模态框 -->
     <div id="addModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="glass-card w-full max-w-md rounded-2xl p-6 shadow-2xl relative transition-all duration-300 transform scale-95 opacity-0" id="modalContent">
+        <!-- 增加了 max-h-screen 和 overflow-y-auto 以防止屏幕较小时内容被遮挡 -->
+        <div class="glass-card w-full max-w-md rounded-2xl p-6 shadow-2xl relative transition-all duration-300 transform scale-95 opacity-0 max-h-[95vh] overflow-y-auto" id="modalContent">
             <button onclick="closeModal()" class="absolute top-4 right-4 text-gray-500 hover:text-red-500 text-xl">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -124,6 +125,10 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2">保号周期 (单位：天，必填)</label>
                     <input type="number" id="simCycle" required placeholder="例如：180" class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/80">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">备注 / 保号要求 (选填)</label>
+                    <input type="text" id="simRemark" placeholder="例如：发送短信到某号码 或 充值5元" class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/80">
                 </div>
                 <div class="mb-6">
                     <label class="block text-gray-700 text-sm font-bold mb-2">本次到期日 (必填)</label>
@@ -396,6 +401,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
                 let percent = Math.min(Math.max((diffDays / 365) * 100, 0), 100);
                 const flagEmoji = getCountryFlag(sim.number);
+                
+                // 渲染备注区域
+                const remarkHTML = sim.remark ? \`<div class="bg-blue-50/60 rounded-lg p-2.5 mb-4 text-xs text-gray-700 border border-blue-100/60 break-words leading-relaxed"><i class="fa-regular fa-comment-dots mr-1.5 text-blue-400"></i>\${sim.remark}</div>\` : '';
 
                 const cardHTML = \`
                     <div class="glass-card rounded-2xl p-6 relative overflow-hidden group flex flex-col h-full">
@@ -419,7 +427,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                         </div>
                         
                         <!-- 号码与状态区域：错层排列，灵活挤压防重叠 -->
-                        <div class="flex justify-between items-center mb-5 gap-2">
+                        <div class="flex justify-between items-center mb-4 gap-2">
                             <p class="text-gray-600 font-mono text-sm flex items-center gap-1.5 truncate">
                                 <span class="text-lg">\${flagEmoji}</span>
                                 <span class="truncate">\${sim.number || '未登记号码'}</span>
@@ -429,6 +437,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
                                 <i class="fa-solid \${icon} mr-1"></i>\${statusText}
                             </span>
                         </div>
+                        
+                        <!-- 备注/保号要求区域 -->
+                        \${remarkHTML}
                         
                         <!-- 底部进度条区域：固定靠底 -->
                         <div class="mt-auto">
@@ -484,6 +495,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
                 name: document.getElementById('simName').value,
                 number: document.getElementById('simNumber').value,
                 cycle: parseInt(document.getElementById('simCycle').value) || 0,
+                remark: document.getElementById('simRemark').value,
                 expireDate: document.getElementById('simExpire').value
             };
 
@@ -590,6 +602,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
             document.getElementById('simName').value = sim.name || '';
             document.getElementById('simNumber').value = sim.number || '';
             document.getElementById('simCycle').value = sim.cycle || '';
+            document.getElementById('simRemark').value = sim.remark || '';
             document.getElementById('simExpire').value = sim.expireDate || '';
 
             const modal = document.getElementById('addModal');
@@ -752,7 +765,7 @@ export default {
 
       if (request.method === "PUT") {
         try {
-          const { id, expireDate, name, number, cycle } = await request.json();
+          const { id, expireDate, name, number, cycle, remark } = await request.json();
           let found = false;
           esims = esims.map(sim => {
             if (sim.id === id) { 
@@ -761,6 +774,7 @@ export default {
                 if (name !== undefined) sim.name = name;
                 if (number !== undefined) sim.number = number;
                 if (cycle !== undefined) sim.cycle = cycle;
+                if (remark !== undefined) sim.remark = remark; // 新增备注保存
                 return sim; 
             }
             return sim;
@@ -810,13 +824,14 @@ export default {
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
       const cycleText = sim.cycle ? `${sim.cycle}天` : '未设置';
+      const remarkText = sim.remark ? `\n📝 备注: ${sim.remark}` : ''; // 推送消息中加入备注
 
       if (diffDays <= 15 && diffDays > 0) {
-        messages.push(`⚠️ 【eSIM 保号提醒】\n📱 卡名: ${sim.name}\n📞 号码: ${sim.number || '未填写'}\n🔄 周期: ${cycleText}\n📅 到期: ${sim.expireDate}\n⏳ 剩余: ${diffDays} 天！\n👉 请尽快处理续期！`);
+        messages.push(`⚠️ 【eSIM 保号提醒】\n📱 卡名: ${sim.name}\n📞 号码: ${sim.number || '未填写'}\n🔄 周期: ${cycleText}\n📅 到期: ${sim.expireDate}${remarkText}\n⏳ 剩余: ${diffDays} 天！\n👉 请尽快处理续期！`);
       } else if (diffDays === 0) {
-        messages.push(`🚨 【eSIM 紧急提醒】\n📱 卡名: ${sim.name} 今天到期！`);
+        messages.push(`🚨 【eSIM 紧急提醒】\n📱 卡名: ${sim.name} 今天到期！${remarkText}`);
       } else if (diffDays < 0 && Math.abs(diffDays) % 7 === 0) {
-        messages.push(`❌ 【eSIM 停机警告】\n📱 卡名: ${sim.name} 已过期 ${Math.abs(diffDays)} 天。`);
+        messages.push(`❌ 【eSIM 停机警告】\n📱 卡名: ${sim.name} 已过期 ${Math.abs(diffDays)} 天。${remarkText}`);
       }
     });
 
